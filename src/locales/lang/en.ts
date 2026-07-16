@@ -336,6 +336,8 @@ export default {
     checkUpdateErr: 'Check Update Fail',
     invalidHexString: 'Invalid hex string: odd number of characters',
     invalidHexCharacter: 'Invalid hex character',
+    invalidBinaryString: 'Invalid binary string: length not multiple of 8',
+    invalidBinaryCharacter: 'Invalid binary character',
   },
 
   tabMain: {
@@ -393,10 +395,7 @@ export default {
     typeRequired: 'Type required',
     ttlRequired: 'TTL required',
     ttlValidator: '-1 (Forever) or positive integer',
-    valueRequired: 'Value required',
     jsonValidator: 'Value must be in a valid JSON format',
-    hashValidator: 'HashKey and hashValue required',
-    streamValidator: 'Field and value required',
     hashHint: '(HashKey: HashValue)',
     hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
     zsetHint: '(Value: Score)',
@@ -418,7 +417,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: 'Value Required',
     fieldScoreRequired: 'Score Required',
     editField: 'Edit Field',
     viewField: 'View Field',
@@ -759,6 +757,11 @@ export default {
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',
     autoCopyHint: 'Auto Copy Command Result',
+    outputModeHint: 'Output format: redis-cli TTY / --raw / --json / --csv',
+    outputStandard: 'TTY',
+    outputRaw: 'Raw',
+    outputJson: 'JSON',
+    outputCsv: 'CSV',
 
     commandHint: 'View Command List',
     commandTitle: 'Commands',
@@ -816,16 +819,27 @@ export default {
     loadAll: 'Load All',
     renameKey: 'Rename Key',
     duplicateKey: 'Create Duplicate',
+    copyValue: 'Copy Value',
+    copyFieldValue: 'Copy Field Value',
     copyAsCommand: 'Copy as Command',
+    refreshFieldRow: 'Refresh Row',
+    refreshFieldRowOk: 'Row refreshed',
+    refreshKeyOk: 'Refreshed',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',
     locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
+    textMemoryEstimate: 'Memory Usage (est.): ',
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',
+    valueTruncatedTitle: 'Value too large — showing preview',
+    valueTruncatedDesc:
+      'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',
+    valueTruncatedDismiss: 'Keep Preview',
+    valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
     keyShortHint: 'View KeyShort',
     keyShort: {
@@ -868,7 +882,7 @@ export default {
   keyMain: {
     keyword: 'Enter to Search',
     exactSearch:
-      'Exact Match<br/>• Off: input app → auto add * before/after, scan *app*<br/>• On: input app* → query keys starting with app; input app → use EXISTS to check if key exists',
+      '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>With * ? [: use pattern as typed<br/><br/><b>Exact</b> (checked)<br/>Check if key name exactly matches input',
     refreshKey: 'Refresh List (F5)',
     scanning: 'Scanning...',
     pauseScan: 'Pause Scan',

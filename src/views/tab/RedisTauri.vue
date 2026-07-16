@@ -11,7 +11,9 @@ import type {
   RedisCommand,
   RedisExportCsv_Deserialize,
   RedisFieldAdd_Deserialize,
+  RedisFieldAsCommand_Deserialize,
   RedisFieldDel_Deserialize,
+  RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
   RedisImportCsv,
   RedisKey_Deserialize,
@@ -87,6 +89,9 @@ const minimalFieldScan: FieldScanParam_Deserialize = {
   loadAll: false,
   meta: null,
   bytesFormat: null,
+  valueByteLimit: null,
+  valuePreviewBytes: null,
+  forceFullValue: null,
 }
 
 const minimalSetParam: RedisSetParam_Deserialize = {
@@ -121,6 +126,14 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   valFmt: null,
 }
 
+const minimalFieldGet: RedisFieldGet_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  valFmt: null,
+}
+
 const minimalFieldDel: RedisFieldDel_Deserialize = {
   key: dummyKey,
   fieldIndex: 0,
@@ -130,7 +143,21 @@ const minimalFieldDel: RedisFieldDel_Deserialize = {
   valFmt: null,
 }
 
-const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
+const minimalFieldAsCommand: RedisFieldAsCommand_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  streamId: '',
+  valFmt: null,
+}
+
+const minimalRedisCmd: RedisCommand = {
+  command: 'PING',
+  node: null,
+  autoBroadcast: null,
+  outputMode: null,
+}
 
 const minimalMemoryParam: RedisMemoryParam = {
   match: null,
@@ -205,8 +232,12 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalFieldAdd } }
     case 'fieldSet':
       return { id: connIdForDefaults(), param: { ...minimalFieldSet } }
+    case 'fieldGet':
+      return { id: connIdForDefaults(), param: { ...minimalFieldGet } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
+    case 'getFieldAsCommand':
+      return { id: connIdForDefaults(), param: { ...minimalFieldAsCommand } }
     case 'memoryUsage':
       return { id: connIdForDefaults(), param: { ...minimalMemoryParam } }
     case 'batchDel':

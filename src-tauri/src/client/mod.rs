@@ -137,6 +137,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(ScanCursor::default()),
+            exact: false,
         };
         let result1 = client().scan(param).unwrap();
         println!("{result1:#?}");
@@ -145,6 +146,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(result1.cursor),
+            exact: false,
         };
         let result2 = client().scan(param2).unwrap();
         println!("{result2:#?}");
@@ -213,6 +215,9 @@ mod tests {
             load_all: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
+            value_byte_limit: None,
+            value_preview_bytes: None,
+            force_full_value: None,
         }
     }
 
@@ -302,6 +307,7 @@ mod tests {
             command: command.into(),
             node: None,
             auto_broadcast: Some(true),
+            output_mode: None,
         });
         println!("{result:#?}");
     }

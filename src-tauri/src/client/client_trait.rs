@@ -71,6 +71,8 @@ pub trait MeClient: Send + Sync {
 
     fn field_set(&self, param: RedisFieldSet) -> AnyResult<()>;
 
+    fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue>;
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()>;
 
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String>;
@@ -107,6 +109,7 @@ pub trait MeClient: Send + Sync {
     fn mock_data(&self, count: u64) -> AnyResult<()>;
     fn key_type(&self, key: RedisKey) -> AnyResult<String>;
     fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String>;
+    fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String>;
     fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>>;
     fn xinfo_consumers(&self, key: RedisKey, group: String) -> AnyResult<Vec<XInfoConsumer>>;
     fn key_slot(&self, key: RedisKey) -> AnyResult<u64>;
@@ -149,17 +152,14 @@ pub fn scan_0_batch_count(pattern: &str) -> u64 {
     }
 }
 
-/// 判断 pattern 是否为 Redis glob 风格（包含 *、?、[] 等通配符）
-pub fn is_redis_glob(pattern: &str) -> bool {
-    pattern.contains('*') || pattern.contains('?') || pattern.contains('[')
-}
-
-/// 精确查询优化：非 glob 模式时直接使用 EXISTS 代替 SCAN
+/// 完全匹配时用 EXISTS 判断键是否存在；否则返回 None 走 SCAN
+/// 注意：EXISTS 路径不校验 scan_type，精确查完整键名时更符合实际使用场景
 pub fn scan_0_exact<C: redis::ConnectionLike>(
     conn: &mut C,
     pattern: &str,
+    exact: bool,
 ) -> AnyResult<Option<ScanResult>> {
-    if is_redis_glob(pattern) {
+    if !exact {
         return Ok(None);
     }
     let exists: bool = redis::cmd("EXISTS").arg(pattern).query(conn)?;
@@ -205,7 +205,8 @@ pub fn field_scan0(
     let bytes_format = param.bytes_format.as_ref().cloned().unwrap_or_default();
 
     // String, Json, List, Hash(WithKey), Stream(WithKey), Stream 直接获取得到值
-    let (mut value, key_type, mut cc, length) = field_scan_0_get(&mut conn, &param, &bytes_format)?;
+    let (mut value, key_type, mut cc, length, value_truncated) =
+        field_scan_0_get(&mut conn, &param, &bytes_format)?;
     // Hash, Set, Zset 进行扫描(hscan, sscan, zscan)
     let key = param.key;
     if value.is_none() {
@@ -261,14 +262,37 @@ pub fn field_scan0(
         cc,
         length,
         with_field_key,
+        value_truncated,
     )
+}
+
+/// STRING 按阈值决定 GET 全量或 GETRANGE 预览；返回 (bytes, strlen, truncated)
+fn load_string_bytes(
+    conn: &mut MutexGuard<impl Commands>,
+    key: &RedisKey,
+    param: &FieldScanParam,
+) -> AnyResult<(Vec<u8>, usize, bool)> {
+    let strlen: usize = conn.strlen(key)?;
+    let force_full = param.force_full_value.unwrap_or(false);
+    if !force_full {
+        if let Some(limit) = param.value_byte_limit {
+            if strlen > limit as usize {
+                let preview = param.value_preview_bytes.unwrap_or(1000) as usize;
+                let end = preview.saturating_sub(1) as isize;
+                let value: Vec<u8> = conn.getrange(key, 0, end)?;
+                return Ok((value, strlen, true));
+            }
+        }
+    }
+    let value: Vec<u8> = conn.get(key)?;
+    Ok((value, strlen, false))
 }
 
 pub fn field_scan_0_get(
     mut conn: &mut MutexGuard<impl Commands>,
     param: &FieldScanParam,
     bytes_format: &BytesFormat,
-) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize)> {
+) -> AnyResult<(Option<serde_json::Value>, ValueType, ScanCursor, usize, bool)> {
     let key = &param.key;
     let hash_key = param.hash_key.clone();
 
@@ -277,6 +301,7 @@ pub fn field_scan_0_get(
 
     // String类型的bytes长度
     let mut length = 0;
+    let mut value_truncated = false;
 
     let value: Option<serde_json::Value> = match key_type {
         ValueType::None => {
@@ -285,8 +310,9 @@ pub fn field_scan_0_get(
             })
         }
         ValueType::String => {
-            let value: Vec<u8> = conn.get(key)?;
-            length = value.len();
+            let (value, strlen, truncated) = load_string_bytes(&mut conn, key, param)?;
+            length = strlen;
+            value_truncated = truncated;
             let value: String = format_bytes(&value, bytes_format);
             cc.finished = true;
             Some(serde_json::to_value(value)?)
@@ -408,7 +434,7 @@ pub fn field_scan_0_get(
         }
         _ => None,
     };
-    Ok((value, key_type, cc, length))
+    Ok((value, key_type, cc, length, value_truncated))
 }
 
 pub fn field_scan_1_cmd(
@@ -534,6 +560,7 @@ pub fn field_scan_4_return(
     cursor: ScanCursor,
     length: usize,
     with_field_key: bool,
+    value_truncated: bool,
 ) -> AnyResult<FieldScanResult> {
     let ttl: i64 = conn.ttl(&key)?;
     let size: u64 = redis::cmd("memory")
@@ -551,6 +578,7 @@ pub fn field_scan_4_return(
         value,
         cursor,
         length,
+        value_truncated,
     })
 }
 
@@ -783,6 +811,75 @@ pub fn field_set0(
         }
     };
     Ok(())
+}
+
+/// 单条字段读取：Hash→HGET+HTTL，List→LINDEX，ZSet→ZSCORE；Set/Stream 等不支持
+pub fn field_get0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisFieldGet,
+    httl_supported: bool,
+) -> AnyResult<RedisFieldValue> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    match key_type {
+        ValueType::Hash => {
+            let field_bytes = parse_bytes(&param.field_key, &val_fmt)?;
+            let value: Option<Vec<u8>> = conn.hget(&key, &field_bytes)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_key.clone(),
+            })?;
+            let mut field_ttl = -1i64;
+            if httl_supported {
+                if let Ok(ttl_values) =
+                    conn.httl::<_, _, Vec<IntegerReplyOrNoOp>>(&key, &[&field_bytes])
+                {
+                    field_ttl = match ttl_values.first() {
+                        Some(IntegerReplyOrNoOp::IntegerReply(ttl)) => *ttl as i64,
+                        Some(IntegerReplyOrNoOp::NotExists) => -2,
+                        Some(IntegerReplyOrNoOp::ExistsButNotRelevant) | None => -1,
+                        _ => -1,
+                    };
+                }
+            }
+            Ok(RedisFieldValue {
+                field_key: format_bytes(&field_bytes, &val_fmt),
+                field_value: format_bytes(&value_bytes, &val_fmt),
+                field_score: 0.0,
+                field_ttl,
+            })
+        }
+        ValueType::List => {
+            let value: Option<Vec<u8>> = conn.lindex(&key, param.field_index)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_index.to_string(),
+            })?;
+            Ok(RedisFieldValue {
+                field_key: String::new(),
+                field_value: format_bytes(&value_bytes, &val_fmt),
+                field_score: 0.0,
+                field_ttl: -1,
+            })
+        }
+        ValueType::ZSet => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let score: Option<f64> = conn.zscore(&key, &member_bytes)?;
+            let score = score.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_value.clone(),
+            })?;
+            Ok(RedisFieldValue {
+                field_key: String::new(),
+                field_value: format_bytes(&member_bytes, &val_fmt),
+                field_score: score,
+                field_ttl: -1,
+            })
+        }
+        _ => {
+            handle_other_value_type(&key_type, &key)?;
+            unreachable!()
+        }
+    }
 }
 
 pub fn field_del0(mut conn: MutexGuard<impl Commands>, param: RedisFieldDel) -> AnyResult<()> {
@@ -1476,6 +1573,86 @@ pub fn get_key_as_command0(
     key: RedisKey,
 ) -> AnyResult<String> {
     Ok(key_as_command_lines(&mut conn, &key)?.join("\n"))
+}
+
+/// 表格单行 → redis-cli 可执行命令（Hash HSET / List RPUSH / Set SADD / ZSet ZADD / Stream XADD）
+pub fn get_field_as_command0(
+    mut conn: MutexGuard<impl Commands>,
+    param: RedisFieldAsCommand,
+) -> AnyResult<String> {
+    let key: RedisKey = param.key;
+    let key_type: ValueType = conn.key_type(&key)?;
+    if key_type == ValueType::None {
+        bail!(AppError::KeyNotFound {
+            key: vec8_to_display_string(key.to_bytes())
+        });
+    }
+
+    let key_bytes = key.to_bytes();
+    let val_fmt = param.val_fmt.as_ref().cloned().unwrap_or_default();
+
+    let line = match key_type {
+        ValueType::Hash => {
+            let field_bytes = parse_bytes(&param.field_key, &val_fmt)?;
+            let value: Option<Vec<u8>> = conn.hget(&key, &field_bytes)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_key.clone(),
+            })?;
+            format_hset_command(key_bytes, &field_bytes, &value_bytes)
+        }
+        ValueType::List => {
+            let value: Option<Vec<u8>> = conn.lindex(&key, param.field_index)?;
+            let value_bytes = value.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_index.to_string(),
+            })?;
+            format_rpush_command(key_bytes, std::slice::from_ref(&value_bytes)).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty list element".into(),
+                }
+            })?
+        }
+        ValueType::Set => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            format_sadd_command(key_bytes, std::slice::from_ref(&member_bytes)).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty set member".into(),
+                }
+            })?
+        }
+        ValueType::ZSet => {
+            let member_bytes = parse_bytes(&param.field_value, &val_fmt)?;
+            let score: Option<f64> = conn.zscore(&key, &member_bytes)?;
+            let score = score.ok_or_else(|| AppError::FieldNotFound {
+                hash_key: param.field_value.clone(),
+            })?;
+            format_zadd_command(key_bytes, &[(member_bytes, score)]).ok_or_else(|| {
+                AppError::Internal {
+                    message: "empty zset member".into(),
+                }
+            })?
+        }
+        ValueType::Stream => {
+            if param.stream_id.is_empty() {
+                bail!(AppError::FieldNotFoundStream {
+                    stream_id: param.stream_id
+                });
+            }
+            let raw: Value = redis::cmd("XRANGE")
+                .arg(&key)
+                .arg(&param.stream_id)
+                .arg(&param.stream_id)
+                .query(&mut conn)?;
+            let entries = parse_xrange_ordered(raw)?;
+            let (id, fields) = entries.first().ok_or_else(|| AppError::FieldNotFoundStream {
+                stream_id: param.stream_id.clone(),
+            })?;
+            format_xadd_command(key_bytes, id, fields)
+        }
+        other => bail!(AppError::KeyTypeUnsupported {
+            value_type: ui_key_type(other)
+        }),
+    };
+    Ok(line)
 }
 
 pub fn xinfo_groups0(
