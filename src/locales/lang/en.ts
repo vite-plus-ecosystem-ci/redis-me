@@ -69,19 +69,25 @@ export default {
     updateNow: 'Check Now',
     updateAppStore: 'Update By AppStore',
 
-    baseSetting: 'Base Setting',
-    moreSetting: 'More Setting',
+    baseSetting: 'Basic Settings',
+    moreSetting: 'More Settings',
     extLabelWidth: '140px',
     keyScanCount: 'Key Scan',
     fieldScanCount: 'Field Scan',
     keyScanCountTip:
       'Number of keys loaded per SCAN; too large may affect performance. Range {min}–{max}',
-    fieldScanCountTip: 'Fields loaded per HSCAN or SSCAN. Range {min}~{max}',
+    fieldScanCountTip:
+      'HSCAN/SSCAN/ZSCAN COUNT per request; also the cumulative threshold for frontend auto-load. Range {min}~{max}',
     commandTimeout: 'Cmd Timeout',
     commandTimeoutTip:
       'Max wait for one Redis command on an open connection; takes effect after reconnect. Range {min}–{max} s',
     scriptTimeout: 'Script Timeout',
     scriptTimeoutTip: 'Max runtime for custom codec scripts. Range {min}–{max} s',
+    valueByteLimitMB: 'Safe Limit',
+    valueByteLimitMBTip: 'STRING value size threshold to prompt full load. Range {min}–{max} M',
+    valuePreviewBytes: 'Preview Bytes',
+    valuePreviewBytesTip:
+      'Preview first N bytes when value exceeds safe limit. Range {min}–{max} B',
     secUnit: 's',
     countUnit: '',
     pxUnit: 'px',
@@ -110,7 +116,7 @@ export default {
     openDir: 'Open',
     resetWindow: 'Reset Window',
     resetWindowTip: 'Restore default size and center',
-    resetWindowOk: 'Window restored to default size',
+    resetWindowOk: 'Window restored to default position and size',
     shortcuts: 'Shortcuts',
     appFullscreen: 'Fullscreen',
     shortcutTips: 'Shortcuts',
@@ -336,6 +342,8 @@ export default {
     checkUpdateErr: 'Check Update Fail',
     invalidHexString: 'Invalid hex string: odd number of characters',
     invalidHexCharacter: 'Invalid hex character',
+    invalidBinaryString: 'Invalid binary string: length not multiple of 8',
+    invalidBinaryCharacter: 'Invalid binary character',
   },
 
   tabMain: {
@@ -393,10 +401,7 @@ export default {
     typeRequired: 'Type required',
     ttlRequired: 'TTL required',
     ttlValidator: '-1 (Forever) or positive integer',
-    valueRequired: 'Value required',
     jsonValidator: 'Value must be in a valid JSON format',
-    hashValidator: 'HashKey and hashValue required',
-    streamValidator: 'Field and value required',
     hashHint: '(HashKey: HashValue)',
     hashHintTtl: '(HashKey: HashValue: TTL Seconds)',
     zsetHint: '(Value: Score)',
@@ -418,7 +423,6 @@ export default {
   },
 
   fieldSet: {
-    fieldValueRequired: 'Value Required',
     fieldScoreRequired: 'Score Required',
     editField: 'Edit Field',
     viewField: 'View Field',
@@ -759,6 +763,11 @@ export default {
     readonlyHint: 'Executing commands is temporarily not supported in read-only mode',
     readonlyWriteHint: 'Write or non-readonly commands are not allowed in read-only mode',
     autoCopyHint: 'Auto Copy Command Result',
+    outputModeHint: 'Output format: redis-cli TTY / --raw / --json / --csv',
+    outputStandard: 'TTY',
+    outputRaw: 'Raw',
+    outputJson: 'JSON',
+    outputCsv: 'CSV',
 
     commandHint: 'View Command List',
     commandTitle: 'Commands',
@@ -801,10 +810,29 @@ export default {
     locationTitle: 'Cluster Node',
     slotHint: 'View the cluster slot where the key is located',
     slotTitle: 'Cluster Slot',
-    tableKeyword: 'Fuzzy Filter',
-    insertRow: 'Insert Row',
+    tableKeyword: 'Local filter',
+    fieldScanPlaceholder: 'Scan params / local filter',
+    listStreamFilterPlaceholder: 'Local filter',
+    listIndexMin: 'Min index',
+    listIndexMax: 'Max index',
+    listSortAsc: 'Asc',
+    listSortDesc: 'Desc',
+    listLpopConfirm: 'Run LPOP? This will pop and remove the first element of the list.',
+    listRpopConfirm: 'Run RPOP? This will pop and remove the last element of the list.',
+    setPopConfirm: 'Run SPOP? This will randomly pop and remove an element from the set.',
+    zpopMinConfirm: 'Run ZPOPMIN? This will pop and remove the element with the lowest score.',
+    zpopMaxConfirm: 'Run ZPOPMAX? This will pop and remove the element with the highest score.',
+    fieldCommands: 'More',
+    fieldExactSearch:
+      '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>Use * ? [ as glob when present<br/><br/><b>Exact</b> (checked)<br/>Whether a field/member exactly matches input (Hash matches field name only)',
+    insertRow: 'Insert',
+    allHashKeys: 'All Keys',
+    allHashValues: 'All Values',
+    hashKeysEmpty: 'No fields',
+    hashValuesEmpty: 'No values',
     id: 'ID',
     key: 'Key',
+    index: 'Index',
     ttl: 'TTL',
     value: 'Value',
     score: 'Score',
@@ -816,17 +844,83 @@ export default {
     loadAll: 'Load All',
     renameKey: 'Rename Key',
     duplicateKey: 'Create Duplicate',
-    copyAsCommand: 'Copy as Command',
+    copyValue: 'Copy Value',
+    copyKey: 'Copy Key',
+    copyIndex: 'Copy Index',
+    copyStreamId: 'Copy ID',
+    copyScore: 'Copy Score',
+    showZsetRank: 'View Index',
+    rank: 'Index (ZRANK)',
+    revRank: 'Rev Index (ZREVRANK)',
+    rankTitle: 'Member Rank',
+    rankNotFound: 'Not Found',
+    zsetRange: 'TopN',
+    zsetRangeTitle: 'ZSet Rank Query',
+    zsetRangeCount: 'Count',
+    zsetRangeAsc: 'Asc',
+    zsetRangeDesc: 'Desc',
+    zsetRangeQuery: 'Query',
+    zsetRangeFilter: 'Filter (value, score)',
+    zsetRangeEmpty: 'No data',
+    copyAsCommand: 'Copy Command',
+    refreshFieldRow: 'Refresh Row',
+    refreshFieldRowOk: 'Row refreshed',
+    refreshKeyOk: 'Key refreshed',
     copyCommandOk: 'Command copied',
     copyCommandEmpty: 'Empty key, nothing to copy',
     refreshKey: 'Refresh Key',
     locateKeyHint: 'Locate current key in key list',
 
     textMemory: 'Memory Usage: ',
+    textMemoryEstimate: 'Memory Usage (est.): ',
     textLength: 'Bytes Length: ',
     textEntries: 'Scanned: ',
     totalCount: 'Total: ',
+    valueTruncatedTitle: 'Value too large — showing preview',
+    valueTruncatedDesc:
+      'This key is about {size}, exceeding the {limit} limit. Only the first {preview} bytes are shown to keep the UI responsive.',
+    valueTruncatedDismiss: 'Keep Preview',
+    valueTruncatedLoadAll: 'Load Full Value',
     viewCodec: 'Codec',
+    commandHelp: 'Command Help',
+    objectInfo: 'Object Introspection',
+    objectInfoCommand: 'Command',
+    objectInfoItem: 'Item',
+    objectInfoValue: 'Value',
+    objectEncoding: 'Internal Encoding',
+    objectIdleTime: 'Idle Time',
+    objectRefcount: 'Reference Count',
+    objectFreq: 'Access Frequency',
+    objectInfoNA: 'N/A',
+    objectIdleTimeUnavailable: 'OBJECT IDLETIME is unavailable when maxmemory-policy is LFU-based',
+    objectFreqUnavailable:
+      'OBJECT FREQ is unavailable when maxmemory-policy is not LFU (including no eviction policy)',
+    objectEncodingTip: `Redis objects can be encoded in different ways<br/><br/>
+<b>Strings</b><br/>
+• raw: normal string encoding<br/>
+• int: a string representing a 64-bit signed integer, encoded this way to save space<br/>
+• embstr: embedded string; an object where the SDS is an immutable string allocated in the same memory block as the object itself; length limited by OBJ_ENCODING_EMBSTR_SIZE_LIMIT (44 bytes)<br/><br/>
+<b>Lists</b><br/>
+• linkedlist: simple list encoding (old, no longer used)<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small lists<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small lists<br/>
+• quicklist: a linked list of ziplist or listpack<br/><br/>
+<b>Sets</b><br/>
+• hashtable: normal set encoding<br/>
+• intset: special encoding for small sets of integers only<br/>
+• listpack: (Redis ≥ 7.2) space-efficient encoding for small sets<br/><br/>
+<b>Hashes</b><br/>
+• zipmap: old hash encoding (no longer used)<br/>
+• hashtable: normal hash table encoding<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small hashes<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small hashes<br/><br/>
+<b>Sorted Sets</b><br/>
+• skiplist: normal sorted set encoding<br/>
+• ziplist: (Redis ≤ 6.2) space-efficient encoding for small sorted sets<br/>
+• listpack: (Redis ≥ 7.0) space-efficient encoding for small sorted sets<br/><br/>
+<b>Streams</b><br/>
+• stream: a radix tree encoded as listpack<br/><br/>
+Once an operation prevents Redis from keeping the space-saving encoding, special encodings are automatically converted to the general type`,
     keyShortHint: 'View KeyShort',
     keyShort: {
       fullscreen: 'Fullscreen Editor',
@@ -868,7 +962,7 @@ export default {
   keyMain: {
     keyword: 'Enter to Search',
     exactSearch:
-      'Exact Match<br/>• Off: input app → auto add * before/after, scan *app*<br/>• On: input app* → query keys starting with app; input app → use EXISTS to check if key exists',
+      '<b>Scan</b> (unchecked)<br/>app: contains app<br/>app*: starts with app<br/>*app: ends with app<br/>With * ? [: use pattern as typed<br/><br/><b>Exact</b> (checked)<br/>Check if key name exactly matches input',
     refreshKey: 'Refresh List (F5)',
     scanning: 'Scanning...',
     pauseScan: 'Pause Scan',

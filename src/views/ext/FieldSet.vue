@@ -4,7 +4,12 @@ import { computed, inject, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { shareProvideKey } from '@/types/me-interface'
-import type { BytesFormat, RedisFieldSet_Deserialize } from '@/types/tauri-specta'
+import type {
+  BytesFormat,
+  RedisFieldGet_Deserialize,
+  RedisFieldSet_Deserialize,
+  RedisFieldValue,
+} from '@/types/tauri-specta'
 import {
   customFormatName,
   defaultFieldViewFmt,
@@ -17,6 +22,7 @@ import {
   meViewToWireAsync,
   needsJsonNormalize,
   toWireFormat,
+  viewFmtForField,
   type ViewBytesFormat,
 } from '@/utils/format'
 import { meCommands, meCopy, meErr, meFormatDisplayValue, meJsonNormal, meOk } from '@/utils/util'
@@ -29,6 +35,8 @@ type FieldSetOpen = Partial<FieldSetForm> & {
   keyWireFmt?: BytesFormat
   /** 键级数据编码，用于默认字段 view */
   keyViewFmt?: ViewBytesFormat
+  /** Stream 条目 ID */
+  streamId?: string
   /** 查看模式：表单只读，隐藏保存 */
   readonly?: boolean
 }
@@ -37,12 +45,14 @@ const props = withDefaults(
   defineProps<{
     /** 与 RedisValue 值区美化开关一致，open 时同步为初始状态 */
     pretty?: boolean
+    /** 与值页 HTTL 开关一致；关则隐藏 TTL 展示/编辑，保存时由后端保留原有过期 */
+    hashFieldTtlEnabled?: boolean
   }>(),
-  { pretty: true },
+  { pretty: true, hashFieldTtlEnabled: false },
 )
 
 const { t } = useI18n()
-const emit = defineEmits(['success', 'closed'])
+const emit = defineEmits(['success', 'closed', 'refreshed'])
 defineExpose({ open, close })
 
 const share = inject(shareProvideKey)!
@@ -59,6 +69,7 @@ const initForm: FieldSetForm = {
   fieldValue: '',
   fieldScore: 0,
   fieldTtl: -1,
+  includeFieldTtl: false,
   valFmt: 'utf8',
 }
 const form = ref<FieldSetForm>(cloneDeep(initForm))
@@ -66,9 +77,12 @@ const form = ref<FieldSetForm>(cloneDeep(initForm))
 /** fieldScan 原始 wire，切换字段编码时始终以此为源 */
 const srcFieldWire = ref('')
 const keyWireFmt = ref<BytesFormat>('utf8')
+/** 键级 view 编码，field_get 与值页表格刷新一致 */
+const keyViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldViewFmt = ref<ViewBytesFormat>('utf8')
 const fieldPretty = ref(true)
 const editorLoading = ref(false)
+const isRefreshing = ref(false)
 const decodeFailed = ref(false)
 const codeRemountKey = ref(0)
 
@@ -77,6 +91,11 @@ const fieldViewOptionList = computed(() => fieldViewOptions(keyWireFmt.value, cu
 const prettyEnabled = computed(
   () => fieldViewFmt.value === 'utf8' || fieldViewFmt.value === 'strjson',
 )
+/** hash/list/zset 支持 field_get 单行刷新 */
+const supportsFieldRefresh = computed(() => {
+  const type = form.value.type
+  return type === 'hash' || type === 'list' || type === 'zset'
+})
 
 /** wire + 字段 view → 编辑区文本 */
 async function syncFieldEditor() {
@@ -117,6 +136,7 @@ function open(data: FieldSetOpen) {
   Object.assign(form.value, data)
   srcFieldWire.value = String(data.srcFieldValue ?? '')
   keyWireFmt.value = data.keyWireFmt ?? 'utf8'
+  keyViewFmt.value = data.keyViewFmt ?? 'utf8'
   fieldViewFmt.value = defaultFieldViewFmt(data.keyViewFmt ?? 'utf8', keyWireFmt.value)
   fieldPretty.value = props.pretty
   void syncFieldEditor()
@@ -149,7 +169,6 @@ watch(customNames, names => {
 })
 
 const rules = computed(() => ({
-  fieldValue: [{ required: true, message: t('fieldSet.fieldValueRequired') }],
   fieldScore: [{ required: true, message: t('fieldSet.fieldScoreRequired') }],
 }))
 
@@ -181,7 +200,7 @@ function submit() {
       const fmt = fieldViewFmt.value
       let fieldValue = form.value.fieldValue
       if (needsJsonNormalize(fmt)) {
-        fieldValue = meJsonNormal(fieldValue)
+        fieldValue = fieldValue === '' ? '' : meJsonNormal(fieldValue)
       }
       if (isCustomView(fmt)) {
         fieldValue = await meViewToWireAsync(fieldValue, fmt)
@@ -193,16 +212,62 @@ function submit() {
         fieldKey: form.value.type === 'hash' && wireFieldKey ? wireFieldKey : form.value.fieldKey,
         fieldValue,
         valFmt: toWireFormat(fmt),
+        includeFieldTtl: form.value.type === 'hash' ? props.hashFieldTtlEnabled : null,
       })
       visible.value = false
       emit('success')
       meOk(t('editOk'))
-    } catch (e) {
-      meErr(e instanceof Error ? e.message : String(e))
     } finally {
       isSaving.value = false
     }
   })
+}
+
+function buildFieldGetParam(): RedisFieldGet_Deserialize | null {
+  if (!form.value.key?.key) return null
+  const type = form.value.type
+  if (type !== 'hash' && type !== 'list' && type !== 'zset') return null
+  return {
+    key: form.value.key,
+    fieldIndex: form.value.fieldIndex,
+    fieldKey:
+      type === 'hash' && form.value.wireFieldKey ? form.value.wireFieldKey : form.value.fieldKey,
+    fieldValue: type === 'zset' ? srcFieldWire.value : '',
+    valFmt: toWireFormat(viewFmtForField(keyViewFmt.value)),
+    includeFieldTtl: type === 'hash' ? props.hashFieldTtlEnabled : null,
+  }
+}
+
+function applyFieldGetToForm(data: RedisFieldValue) {
+  const type = form.value.type
+  srcFieldWire.value = data.fieldValue
+  if (type === 'hash') {
+    form.value.fieldKey = data.fieldKey
+    if (props.hashFieldTtlEnabled) {
+      form.value.fieldTtl = data.fieldTtl
+    }
+  } else if (type === 'zset' && data.fieldScore != null) {
+    form.value.fieldScore = data.fieldScore
+  }
+}
+
+async function refreshField() {
+  const conn = share.conn
+  const param = buildFieldGetParam()
+  if (!conn || !param || isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    const data = await meCommands.fieldGet(conn.id, param, false)
+    applyFieldGetToForm(data)
+    await syncFieldEditor()
+    codeRemountKey.value++
+    emit('refreshed', data)
+    meOk(t('redisValue.refreshFieldRowOk'))
+  } catch (e) {
+    meErr(e instanceof Error ? e.message : String(e))
+  } finally {
+    isRefreshing.value = false
+  }
 }
 </script>
 
@@ -217,7 +282,7 @@ function submit() {
       </el-form-item>
       <el-form-item
         :label="t('fieldSet.fieldTtl')"
-        v-if="form.type === 'hash' && share.capabilities.httlSupported">
+        v-if="form.type === 'hash' && share.capabilities.httlSupported && hashFieldTtlEnabled">
         <el-input-number
           v-model="form.fieldTtl"
           :min="-1"
@@ -237,7 +302,7 @@ function submit() {
           align="left"
           style="width: 100%" />
       </el-form-item>
-      <el-form-item :label="t('fieldSet.value')" prop="fieldValue" class="field-value-item">
+      <el-form-item :label="t('fieldSet.value')" class="field-value-item">
         <me-code
           :key="codeRemountKey"
           v-model="form.fieldValue"
@@ -260,11 +325,20 @@ function submit() {
             @click="togglePretty" />
           <me-icon
             placement="top-start"
-            :info="t('copy')"
+            :info="t('redisValue.copyValue')"
             class="icon-btn"
             style="font-size: 18px; margin-left: 5px"
             icon="el-icon-document-copy"
             @click="meCopy(form.fieldValue)" />
+          <me-icon
+            v-if="supportsFieldRefresh"
+            placement="top-start"
+            :info="t('redisValue.refreshFieldRow')"
+            class="icon-btn"
+            style="font-size: 18px; margin-left: 5px"
+            icon="el-icon-refresh-right"
+            :style="{ opacity: isRefreshing ? 0.5 : 1, cursor: isRefreshing ? 'wait' : 'pointer' }"
+            @click="refreshField" />
           <el-select
             v-model="fieldViewFmt"
             size="small"

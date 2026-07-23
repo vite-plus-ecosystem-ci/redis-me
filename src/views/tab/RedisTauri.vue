@@ -11,8 +11,12 @@ import type {
   RedisCommand,
   RedisExportCsv_Deserialize,
   RedisFieldAdd_Deserialize,
+  RedisFieldAsCommand_Deserialize,
   RedisFieldDel_Deserialize,
+  RedisFieldGet_Deserialize,
   RedisFieldSet_Deserialize,
+  RedisHashKeys_Deserialize,
+  RedisPop_Deserialize,
   RedisImportCsv,
   RedisKey_Deserialize,
   RedisMemoryParam,
@@ -75,18 +79,26 @@ const emptyScanCursor: ScanCursor = {
   finished: false,
 }
 
-const minimalScanParam: ScanParam = { match: '*', type: null, cursor: emptyScanCursor }
+const minimalScanParam: ScanParam = {
+  match: '*',
+  type: null,
+  cursor: emptyScanCursor,
+  exact: false,
+}
 
 const dummyKey: RedisKey_Deserialize = { key: 'k', bytes: '' }
 
 const minimalFieldScan: FieldScanParam_Deserialize = {
   key: dummyKey,
-  hashKey: null,
   count: 100,
   cursor: null,
-  loadAll: false,
+  match: '*',
+  exact: false,
   meta: null,
   bytesFormat: null,
+  includeMeta: null,
+  keyType: null,
+  includeFieldTtl: null,
 }
 
 const minimalSetParam: RedisSetParam_Deserialize = {
@@ -118,8 +130,22 @@ const minimalFieldSet: RedisFieldSet_Deserialize = {
   fieldValue: '',
   fieldScore: 0,
   fieldTtl: -1,
+  includeFieldTtl: false,
   valFmt: null,
 }
+
+const minimalFieldGet: RedisFieldGet_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  includeFieldTtl: false,
+  valFmt: null,
+}
+
+const minimalHashKeys: RedisHashKeys_Deserialize = { key: dummyKey, valFmt: null }
+
+const minimalFieldPop: RedisPop_Deserialize = { key: dummyKey, mode: 'LPOP', valFmt: null }
 
 const minimalFieldDel: RedisFieldDel_Deserialize = {
   key: dummyKey,
@@ -130,7 +156,21 @@ const minimalFieldDel: RedisFieldDel_Deserialize = {
   valFmt: null,
 }
 
-const minimalRedisCmd: RedisCommand = { command: 'PING', node: null, autoBroadcast: null }
+const minimalFieldAsCommand: RedisFieldAsCommand_Deserialize = {
+  key: dummyKey,
+  fieldIndex: 0,
+  fieldKey: '',
+  fieldValue: '',
+  streamId: '',
+  valFmt: null,
+}
+
+const minimalRedisCmd: RedisCommand = {
+  command: 'PING',
+  node: null,
+  autoBroadcast: null,
+  outputMode: null,
+}
 
 const minimalMemoryParam: RedisMemoryParam = {
   match: null,
@@ -205,8 +245,18 @@ function defaultPayload(cmd: CommandKey): Record<string, unknown> {
       return { id: connIdForDefaults(), param: { ...minimalFieldAdd } }
     case 'fieldSet':
       return { id: connIdForDefaults(), param: { ...minimalFieldSet } }
+    case 'fieldGet':
+      return { id: connIdForDefaults(), param: { ...minimalFieldGet } }
+    case 'hashKeys':
+      return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
+    case 'hashValues':
+      return { id: connIdForDefaults(), param: { ...minimalHashKeys } }
+    case 'fieldPop':
+      return { id: connIdForDefaults(), param: { ...minimalFieldPop } }
     case 'fieldDel':
       return { id: connIdForDefaults(), param: { ...minimalFieldDel } }
+    case 'getFieldAsCommand':
+      return { id: connIdForDefaults(), param: { ...minimalFieldAsCommand } }
     case 'memoryUsage':
       return { id: connIdForDefaults(), param: { ...minimalMemoryParam } }
     case 'batchDel':

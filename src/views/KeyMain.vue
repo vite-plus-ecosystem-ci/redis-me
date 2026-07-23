@@ -28,6 +28,13 @@ import {
 } from '@/utils/favorite'
 import { clearKeyTypeCacheForConn } from '@/utils/key-type-cache'
 import {
+  buildScanPattern,
+  buildLocalFilterPattern,
+  computeScanBatchSize,
+  computeScanProgress,
+  MINIMATCH_SCAN_OPTS,
+} from '@/utils/redis-glob'
+import {
   bus,
   CONN_REFRESH,
   INFO_REFRESH,
@@ -216,24 +223,11 @@ function onKeyListRefreshHotkey(e: KeyboardEvent) {
   void onRefreshKey()
 }
 
-const match = computed(() => {
-  // 仅扫描该目录，直接返回
-  if (loadFolder.value) return keyword.value + ':*'
-
-  // 精确查询直接返回；空白则返回*；否则判断前后是否需要添加*
-  if (exact.value) return keyword.value
-  if (!keyword.value) return '*'
-  if (keyword.value.startsWith('*') && keyword.value.endsWith('*')) return keyword.value
-  if (keyword.value.startsWith('*')) return keyword.value + '*'
-  if (keyword.value.endsWith('*')) return '*' + keyword.value
-  return '*' + keyword.value + '*'
-})
+// 搜索模式：关闭完全匹配时 buildScanPattern 补 * 后 SCAN；开启时原样 EXISTS
+const match = computed(() => buildScanPattern(keyword.value, exact.value, loadFolder.value))
 
 // 与后端 scan_0_batch_count 一致：pattern 去 * 后 ≤1 字符 COUNT=1000，否则 10000
-const scanBatchSize = computed(() => {
-  const stripped = match.value.replace(/\*/g, '')
-  return stripped.length <= 1 ? 1000 : 10000
-})
+const scanBatchSize = computed(() => computeScanBatchSize(match.value))
 
 /** 当前库键总量：单机取 INFO dbN；集群为单 master 键数 × master 节点数 */
 const dbSize = computed(() => {
@@ -246,13 +240,13 @@ const dbSize = computed(() => {
 
 // 扫描进度：按 SCAN 批次估算（与匹配结果数量无关，稀有键搜索时进度仍正常推进）
 const scanProgress = computed(() => {
-  if (cursor.value?.finished) return 100
-  if (!share.conn || scanBatchCount.value === 0) return 0
-  if (dbSize.value > 0) {
-    const scanned = scanBatchCount.value * scanBatchSize.value
-    return Math.min(99, Math.round((scanned / dbSize.value) * 100))
-  }
-  return Math.min(99, scanBatchCount.value * 5)
+  if (!share.conn) return 0
+  return computeScanProgress(
+    scanBatchCount.value,
+    scanBatchSize.value,
+    dbSize.value,
+    Boolean(cursor.value?.finished),
+  )
 })
 
 const cursor = ref<ScanCursor | null>(null)
@@ -261,22 +255,18 @@ const showLoadMoreButtons = computed(
   () => !loading.value && cursor.value != null && !cursor.value.finished,
 )
 
+// 本地过滤模式：精确转义字面，扫描用 match（切换勾选仅更新过滤，回车/查询才重新扫描）
+const filterPattern = computed(() =>
+  buildLocalFilterPattern(keyword.value, exact.value && !loadFolder.value, match.value),
+)
+
 const keyList = ref<RedisKey_Deserialize[]>([])
 const filterKeyList = computed(() => {
   // 收藏模式下，只显示当前连接的收藏键
   let source: RedisKey_Deserialize[] = favoriteMode.value ? currentFavorites.value : keyList.value
 
-  const key = keyword.value.trim()
-  if (!key) return source
-  // 使用 minimatch 做 Redis 风格的 glob 匹配：
-  // - nobrace: true  禁用 {a,b} 扩展（Redis 不支持 brace expansion）
-  // - noglobstar: true  将 ** 视为两个 *（Redis 没有多级目录递归概念）
-  // - noext: true  禁用 +(a|b) 等 extglob（Redis 不支持）
-  // - nocase: true  忽略大小写，与 Redis 默认行为一致
-  return source.filter(k =>
-    // 此处用match，而不是key。是为了过滤时还是包含比较好
-    minimatch(k.key, match.value, { nobrace: true, noglobstar: true, noext: true, nocase: true }),
-  )
+  if (!filterPattern.value) return source
+  return source.filter(k => minimatch(k.key, filterPattern.value, MINIMATCH_SCAN_OPTS))
 })
 
 // 搜索自动加载的停止阈值：使用设置中的 keyScanCount
@@ -325,6 +315,7 @@ async function scanKeyCore(useCursor = false): Promise<number> {
     match: match.value,
     type: keyType.value === 'ALL' ? '' : keyType.value.toLowerCase(),
     cursor: cursor.value,
+    exact: exact.value && !loadFolder.value,
   }
 
   // 延迟一下，方便观察加载过程（不要删除，未来还是测试验证）
@@ -421,7 +412,7 @@ const dbSelectWidth = computed(() => {
   if (!share.conn) return '88px'
   const len = formatDbLabel(share.conn.db).length
   // +16 留给 upDown 后缀图标
-  return `${Math.min(136, Math.max(88, len * 7 + 28 + 16))}px`
+  return `${Math.min(136, Math.max(88, len * 7 + 35 + 16))}px`
 })
 
 /** 集群 Valkey 9+ 多库：el-select 位置仅展示当前 db，不支持切换 */
@@ -917,11 +908,10 @@ function editDbName(db: number): void {
               </el-tooltip>
             </div>
           </template>
-          <template #append>
+          <template v-if="canEdit" #append>
             <me-button
               :info="t('keyMain.addKey')"
               @click="addKey()"
-              v-if="canEdit"
               icon="el-icon-plus"
               placement="bottom" />
           </template>

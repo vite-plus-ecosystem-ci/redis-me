@@ -32,7 +32,14 @@ export const commands = {
 	copy: (id: string, param: RedisCopyParam_Deserialize) => typedError<RedisKey_Serialize, string>(__TAURI_INVOKE("copy", { id, param })),
 	fieldAdd: (id: string, param: RedisFieldAdd_Deserialize) => typedError<RedisKey_Serialize, string>(__TAURI_INVOKE("field_add", { id, param })),
 	fieldSet: (id: string, param: RedisFieldSet_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_set", { id, param })),
+	fieldGet: (id: string, param: RedisFieldGet_Deserialize) => typedError<RedisFieldValue, string>(__TAURI_INVOKE("field_get", { id, param })),
+	hashKeys: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_keys", { id, param })),
+	hashValues: (id: string, param: RedisHashKeys_Deserialize) => typedError<string[], string>(__TAURI_INVOKE("hash_values", { id, param })),
+	fieldPop: (id: string, param: RedisPop_Deserialize) => typedError<string, string>(__TAURI_INVOKE("field_pop", { id, param })),
 	fieldDel: (id: string, param: RedisFieldDel_Deserialize) => typedError<null, string>(__TAURI_INVOKE("field_del", { id, param })),
+	zsetRank: (id: string, param: RedisZsetRank_Deserialize) => typedError<RedisZsetRankResult, string>(__TAURI_INVOKE("zset_rank", { id, param })),
+	zsetRange: (id: string, param: RedisZsetRange_Deserialize) => typedError<RedisZsetRangeItem[], string>(__TAURI_INVOKE("zset_range", { id, param })),
+	objectInfo: (id: string, key: RedisKey_Deserialize) => typedError<RedisObjectInfo, string>(__TAURI_INVOKE("object_info", { id, key })),
 	executeCommand: (id: string, param: RedisCommand) => typedError<string, string>(__TAURI_INVOKE("execute_command", { id, param })),
 	aclUsers: (id: string) => typedError<string[], string>(__TAURI_INVOKE("acl_users", { id })),
 	aclListUsers: (id: string) => typedError<AclUserDetail[], string>(__TAURI_INVOKE("acl_list_users", { id })),
@@ -65,6 +72,7 @@ export const commands = {
 	mockData: (id: string, count: number) => typedError<null, string>(__TAURI_INVOKE("mock_data", { id, count })),
 	keyType: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("key_type", { id, key })),
 	getKeyAsCommand: (id: string, key: RedisKey_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_key_as_command", { id, key })),
+	getFieldAsCommand: (id: string, param: RedisFieldAsCommand_Deserialize) => typedError<string, string>(__TAURI_INVOKE("get_field_as_command", { id, param })),
 	xinfoGroups: (id: string, key: RedisKey_Deserialize) => typedError<XInfoGroup[], string>(__TAURI_INVOKE("xinfo_groups", { id, key })),
 	xinfoConsumers: (id: string, key: RedisKey_Deserialize, group: string) => typedError<XInfoConsumer[], string>(__TAURI_INVOKE("xinfo_consumers", { id, key, group })),
 	keySlot: (id: string, key: RedisKey_Deserialize) => typedError<number, string>(__TAURI_INVOKE("key_slot", { id, key })),
@@ -119,6 +127,9 @@ export type AppSettings = {
 /**  前后端 IPC 字节格式：utf8 文本或 base64 原始字节（hex/binary/msgpack 等视图格式在前端处理） */
 export type BytesFormat = "utf8" | "base64";
 
+/**  终端输出格式，对应 redis-cli `--raw` / `--csv` / `--json`；默认 TTY */
+export type CliOutputMode = "standard" | "raw" | "json" | "csv";
+
 export type CommandLogEntry = {
 	id: number,
 	timestamp: string,
@@ -155,22 +166,38 @@ export type FieldScanParam = FieldScanParam_Serialize | FieldScanParam_Deseriali
 
 export type FieldScanParam_Deserialize = {
 	key: RedisKey_Deserialize,
-	hashKey: string | null,
 	count: number,
 	cursor: ScanCursor | null,
-	loadAll: boolean,
+	/**  HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match） */
+	match: string,
+	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
+	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
+	includeMeta: boolean | null,
+	/**  续扫时传入（include_meta=false），避免重复 TYPE */
+	keyType: string | null,
+	/**  Hash 扫描是否附带 HTTL（默认 false 以提速） */
+	includeFieldTtl: boolean | null,
 };
 
 export type FieldScanParam_Serialize = {
 	key: RedisKey_Serialize,
-	hashKey: string | null,
 	count: number,
 	cursor: ScanCursor | null,
-	loadAll: boolean,
+	/**  HSCAN/SSCAN/ZSCAN 的 MATCH pattern（前端字段名 match） */
+	match: string,
+	/**  完全匹配：true 时走 HGET / SISMEMBER / ZSCORE */
+	exact: boolean,
 	meta: FiledScanMeta | null,
 	bytesFormat: BytesFormat | null,
+	/**  是否拉取 TYPE/TTL/MEMORY/HLEN；前端续扫时为 false */
+	includeMeta: boolean | null,
+	/**  续扫时传入（include_meta=false），避免重复 TYPE */
+	keyType: string | null,
+	/**  Hash 扫描是否附带 HTTL（默认 false 以提速） */
+	includeFieldTtl: boolean | null,
 };
 
 export type FieldScanResult = {
@@ -180,11 +207,26 @@ export type FieldScanResult = {
 	value: any,
 	cursor: ScanCursor,
 	length: number,
+	/**  STRING 因超过 value_byte_limit 仅返回预览片段时为 true */
+	valueTruncated: boolean,
 };
 
 export type FiledScanMeta = {
+	/**  Stream XREVRANGE 上界和下界 */
 	maxId: string,
 	minId: string,
+	/**  STRING 全量加载字节上限；超过且未 force 时仅 GETRANGE 预览前 value_preview_bytes */
+	valueByteLimit: number | null,
+	valuePreviewBytes: number | null,
+	forceFullValue: boolean | null,
+	/**  List LRANGE 下界；空则 0 */
+	listMinIndex: number | null,
+	/**  List LRANGE 上界；空则 len-1 */
+	listMaxIndex: number | null,
+	/**  List 扫描方向：true 从 max 向 min，false 从 min 向 max */
+	listDesc: boolean | null,
+	/**  Stream 扫描方向：true 从 max 向 min（XREVRANGE），false 从 min 向 max（XRANGE） */
+	streamDesc: boolean | null,
 };
 
 export type RedisBatchKey = RedisBatchKey_Serialize | RedisBatchKey_Deserialize;
@@ -263,6 +305,8 @@ export type RedisCommand = {
 	command: string,
 	node: string | null,
 	autoBroadcast: boolean | null,
+	/**  终端输出格式；`None` 等同 `standard`（TTY） */
+	outputMode: CliOutputMode | null,
 };
 
 export type RedisCopyParam = RedisCopyParam_Serialize | RedisCopyParam_Deserialize;
@@ -336,6 +380,26 @@ export type RedisFieldAdd_Serialize = {
 	valFmt: BytesFormat | null,
 };
 
+export type RedisFieldAsCommand = RedisFieldAsCommand_Serialize | RedisFieldAsCommand_Deserialize;
+
+export type RedisFieldAsCommand_Deserialize = {
+	key: RedisKey_Deserialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldAsCommand_Serialize = {
+	key: RedisKey_Serialize,
+	fieldIndex: number,
+	fieldKey: string,
+	fieldValue: string,
+	streamId: string,
+	valFmt: BytesFormat | null,
+};
+
 export type RedisFieldDel = RedisFieldDel_Serialize | RedisFieldDel_Deserialize;
 
 export type RedisFieldDel_Deserialize = {
@@ -356,6 +420,30 @@ export type RedisFieldDel_Serialize = {
 	valFmt: BytesFormat | null,
 };
 
+export type RedisFieldGet = RedisFieldGet_Serialize | RedisFieldGet_Deserialize;
+
+export type RedisFieldGet_Deserialize = {
+	key: RedisKey_Deserialize,
+	fieldIndex: number,
+	fieldKey: string,
+	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
+	fieldValue: string,
+	/**  为 true 时对 Hash 执行 HTTL；默认 false */
+	includeFieldTtl: boolean | null,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisFieldGet_Serialize = {
+	key: RedisKey_Serialize,
+	fieldIndex: number,
+	fieldKey: string,
+	/**  ZSet 成员定位；Hash 用 field_key、List 用 field_index */
+	fieldValue: string,
+	/**  为 true 时对 Hash 执行 HTTL；默认 false */
+	includeFieldTtl: boolean | null,
+	valFmt: BytesFormat | null,
+};
+
 export type RedisFieldSet = RedisFieldSet_Serialize | RedisFieldSet_Deserialize;
 
 export type RedisFieldSet_Deserialize = {
@@ -366,6 +454,8 @@ export type RedisFieldSet_Deserialize = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期 */
+	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
 };
@@ -378,6 +468,8 @@ export type RedisFieldSet_Serialize = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+	/**  true：界面展示/编辑字段 TTL；false：不拉取列表 TTL，保存时仍保留原有过期 */
+	includeFieldTtl: boolean | null,
 	/**  编辑字段时解析用户输入（含 Hash 字段名）；Redis 键由 `key` 承载，不再经此格式解析 */
 	valFmt: BytesFormat | null,
 };
@@ -387,6 +479,20 @@ export type RedisFieldValue = {
 	fieldValue: string,
 	fieldScore: number | null,
 	fieldTtl: number,
+};
+
+export type RedisHashKeys = RedisHashKeys_Serialize | RedisHashKeys_Deserialize;
+
+export type RedisHashKeys_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  Hash 字段名/值解码格式，与 field_get / fieldScan 一致 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisHashKeys_Serialize = {
+	key: RedisKey_Serialize,
+	/**  Hash 字段名/值解码格式，与 field_get / fieldScan 一致 */
+	valFmt: BytesFormat | null,
 };
 
 export type RedisImportCsv = {
@@ -447,6 +553,35 @@ export type RedisNode = {
 	slaveOfNode: string | null,
 };
 
+export type RedisObjectInfo = {
+	encoding: string | null,
+	idleTime: number | null,
+	/**  IDLETIME 因 maxmemory-policy 等不可用时的错误信息 */
+	idleTimeError: string | null,
+	refcount: number | null,
+	freq: number | null,
+	/**  FREQ 因 maxmemory-policy 等不可用时的错误信息 */
+	freqError: string | null,
+};
+
+export type RedisPop = RedisPop_Serialize | RedisPop_Deserialize;
+
+export type RedisPop_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX） */
+	mode: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisPop_Serialize = {
+	key: RedisKey_Serialize,
+	/**  操作模式（LPOP/RPOP/SPOP/ZPOPMIN/ZPOPMAX） */
+	mode: string,
+	/**  弹出元素的展示格式 */
+	valFmt: BytesFormat | null,
+};
+
 export type RedisSetParam = RedisSetParam_Serialize | RedisSetParam_Deserialize;
 
 export type RedisSetParam_Deserialize = {
@@ -475,6 +610,52 @@ export type RedisSlowLog = {
 	clientName: string,
 };
 
+export type RedisZsetRange = RedisZsetRange_Serialize | RedisZsetRange_Deserialize;
+
+export type RedisZsetRangeItem = {
+	value: string,
+	score: number | null,
+};
+
+export type RedisZsetRange_Deserialize = {
+	key: RedisKey_Deserialize,
+	/**  true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高) */
+	reverse: boolean,
+	/**  返回数量限制 */
+	count: number,
+	/**  值解码格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisZsetRange_Serialize = {
+	key: RedisKey_Serialize,
+	/**  true: ZREVRANGE (分数从高到低); false: ZRANGE (分数从低到高) */
+	reverse: boolean,
+	/**  返回数量限制 */
+	count: number,
+	/**  值解码格式 */
+	valFmt: BytesFormat | null,
+};
+
+export type RedisZsetRank = RedisZsetRank_Serialize | RedisZsetRank_Deserialize;
+
+export type RedisZsetRankResult = {
+	rank: number | null,
+	revRank: number | null,
+};
+
+export type RedisZsetRank_Deserialize = {
+	key: RedisKey_Deserialize,
+	member: string,
+	valFmt: BytesFormat | null,
+};
+
+export type RedisZsetRank_Serialize = {
+	key: RedisKey_Serialize,
+	member: string,
+	valFmt: BytesFormat | null,
+};
+
 export type ScanCursor = {
 	readyNodes: string[],
 	nowNode: string,
@@ -487,6 +668,8 @@ export type ScanParam = {
 	match: string,
 	type: string | null,
 	cursor: ScanCursor | null,
+	/**  完全匹配：true 时后端 EXISTS；false 时 SCAN */
+	exact: boolean,
 };
 
 export type ScanResult = ScanResult_Serialize | ScanResult_Deserialize;

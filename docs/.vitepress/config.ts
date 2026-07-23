@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 
+import { createLangRedirectScript } from './theme/lang-redirect'
+
 /** 子路径部署时改为 `/仓库名/`（建议以 / 结尾），与 Vite `base` 一致 */
 const siteBase: string = '/'
 
@@ -20,6 +22,8 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: siteAsset('images/logo.svg') }],
     ['link', { rel: 'icon', type: 'image/png', href: siteAsset('images/logo.png') }],
+    // 根路径：中文浏览器或已选中文 → /zh/（见 theme/lang-redirect.ts）
+    ['script', { type: 'text/javascript' }, createLangRedirectScript(viteBase)],
   ],
   themeConfig: {
     logo: siteAsset('images/logo.svg'),
@@ -58,5 +62,5 @@ export default defineConfig({
   // srcExclude: ['latest.json', '/zz/**'],
 
   // Windows（Hyper-V/WSL 等）常保留 5172–5271，Vite 默认 5173 会 EACCES
-  vite: { server: { port: 3333, host: '127.0.0.1' }, preview: { port: 3333, host: '127.0.0.1' } },
+  vite: { server: { port: 33333, host: '127.0.0.1' }, preview: { port: 3333, host: '127.0.0.1' } },
 })

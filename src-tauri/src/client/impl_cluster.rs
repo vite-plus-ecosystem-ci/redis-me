@@ -93,8 +93,8 @@ impl MeClient for MeCluster {
     fn scan(&self, param: ScanParam) -> AnyResult<ScanResult> {
         let mut conn = self.get_conn()?;
 
-        // 非 glob 模式的精确查询，使用 EXISTS 优化（O(1) 相比 SCAN 遍历大幅提速）
-        if let Some(result) = scan_0_exact(&mut conn, &param.pattern)? {
+        // exact=true → EXISTS；否则 SCAN
+        if let Some(result) = scan_0_exact(&mut conn, &param.pattern, param.exact)? {
             return Ok(result);
         }
 
@@ -233,20 +233,48 @@ impl MeClient for MeCluster {
         field_set0(self.get_conn()?, param, self.base().capabilities.httl_supported)
     }
 
+    fn field_get(&self, param: RedisFieldGet) -> AnyResult<RedisFieldValue> {
+        field_get0(self.get_conn()?, param, self.base().capabilities.httl_supported)
+    }
+
+    fn hash_keys(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+        hash_keys0(self.get_conn()?, param)
+    }
+
+    fn hash_values(&self, param: RedisHashKeys) -> AnyResult<Vec<String>> {
+        hash_values0(self.get_conn()?, param)
+    }
+
+    fn field_pop(&self, param: RedisPop) -> AnyResult<String> {
+        field_pop0(self.get_conn()?, param)
+    }
+
     fn field_del(&self, param: RedisFieldDel) -> AnyResult<()> {
         field_del0(self.get_conn()?, param)
     }
 
+    fn zset_rank(&self, param: RedisZsetRank) -> AnyResult<RedisZsetRankResult> {
+        zset_rank0(self.get_conn()?, param)
+    }
+
+    fn zset_range(&self, param: RedisZsetRange) -> AnyResult<Vec<RedisZsetRangeItem>> {
+        zset_range0(self.get_conn()?, param)
+    }
+
+    fn object_info(&self, key: RedisKey) -> AnyResult<RedisObjectInfo> {
+        object_info0(self.get_conn()?, key)
+    }
+
     fn execute_command(&self, param: RedisCommand) -> AnyResult<String> {
-        let (cmd, args) = parse_command(param.command.as_str())?;
-        if cmd.is_empty() {
+        let (cmd_name, args) = parse_command(param.command.as_str())?;
+        if cmd_name.is_empty() {
             return Ok("".into());
         };
 
         let mut conn = self.get_conn()?;
 
-        let mut cmd = redis::cmd(cmd.as_str());
-        cmd.arg(args);
+        let mut cmd = redis::cmd(cmd_name.as_str());
+        cmd.arg(&args);
 
         let value = if param.node.as_deref().unwrap_or("").is_empty()
             && param.auto_broadcast.unwrap_or(false)
@@ -256,7 +284,12 @@ impl MeClient for MeCluster {
             let (route, _) = self.get_node_route(param.node)?;
             conn.route_command(&cmd, route)?
         };
-        Ok(redis_value_to_string(value, "\n"))
+        Ok(redis_value_to_cli_display(
+            value,
+            param.output_mode,
+            &cmd_name,
+            &args,
+        ))
     }
 
     fn config_get(
@@ -577,6 +610,10 @@ impl MeClient for MeCluster {
 
     fn get_key_as_command(&self, key: RedisKey) -> AnyResult<String> {
         get_key_as_command0(self.get_conn()?, key)
+    }
+
+    fn get_field_as_command(&self, param: RedisFieldAsCommand) -> AnyResult<String> {
+        get_field_as_command0(self.get_conn()?, param)
     }
 
     fn xinfo_groups(&self, key: RedisKey) -> AnyResult<Vec<XInfoGroup>> {

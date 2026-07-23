@@ -137,6 +137,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(ScanCursor::default()),
+            exact: false,
         };
         let result1 = client().scan(param).unwrap();
         println!("{result1:#?}");
@@ -145,6 +146,7 @@ mod tests {
             pattern: "*".into(),
             scan_type: None,
             cursor: Some(result1.cursor),
+            exact: false,
         };
         let result2 = client().scan(param2).unwrap();
         println!("{result2:#?}");
@@ -165,7 +167,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..600 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();
@@ -188,7 +190,7 @@ mod tests {
 
         pipe.set("field-scan:string", "字段扫描字符串类型 😄")
             .ignore();
-        for i in 0..555 {
+        for i in 0..9999 {
             // 大于512个
             pipe.hset("field-scan:hash", format!("k{i}"), format!("v{i}"))
                 .ignore();
@@ -207,12 +209,15 @@ mod tests {
                 key: key.to_string(),
                 bytes: vec![],
             },
-            hash_key: None,
             count: 150,
             cursor: None,
-            load_all: false,
+            pattern: "*".into(),
+            exact: false,
             meta: None,
             bytes_format: Some(BytesFormat::Base64),
+            include_meta: None,
+            key_type: None,
+            include_field_ttl: None,
         }
     }
 
@@ -302,6 +307,7 @@ mod tests {
             command: command.into(),
             node: None,
             auto_broadcast: Some(true),
+            output_mode: None,
         });
         println!("{result:#?}");
     }
