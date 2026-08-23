@@ -68,13 +68,14 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "@types/lodash": "^4.17.25",
+    "@types/node": "^26.2.0",
     "@vitejs/plugin-vue": "^6.0.8",
     "front-matter": "^4.0.2",
     "sass": "^1.102.0",
     "unplugin-auto-import": "^21.1.0",
     "unplugin-svg-component": "^0.12.6",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.7",
-    "vite-plus": "0.2.7",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
     "vitepress": "2.0.0-alpha.18",
     "vue-tsc": "3.3.9"
   },
