@@ -1,0 +1,30 @@
+# Added by the vite-plus ecosystem-ci smoke test.
+#
+# This fork has no workflow that a `pull_request` event triggers, so a
+# prerelease test PR reports "no checks" and proves nothing about the upgrade.
+# This job runs the two commands that exercise the pinned Vite+ end to end.
+#
+# Remove this file once redis-me itself runs `vp check` and `vp build` on
+# pull requests.
+name: ecosystem-ci build
+
+on:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: false
+          run-install: true
+
+      - name: vp check
+        run: vp check
+
+      - name: vp build
+        run: vp build
