@@ -1,0 +1,23 @@
+package.json
+  s_71a3b49c0bdf46::t_eacca30207c711 71
+pnpm-lock.yaml
+  s_71a3b49c0bdf46::t_38f607941cb6ce 177-179,182,191,197,200,203,1141-1143,2638-2640,3619-3622,3691,3694,3697,3701-3702,3709,3712,3718,3735,3741,3767,3776,4653,4676,4687,4709,4993-4995,5009,5044,5049-5050,5087,5093,5118,5122-5123,5125,5131-5133,5135,5176,5186,5195,5229,5232,5249,5252-5253
+tsconfig.json
+  s_71a3b49c0bdf46::t_a4525f359cab1a 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5fb0b0897442503f67d276e06f6c9533bd994215",
+  "prompts": {},
+  "sessions": {
+    "s_71a3b49c0bdf46": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1129124-4b50-493c-a6b0-9bd30f8b1e4d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "MK <fengmk2@gmail.com>"
+    }
+  }
+}
