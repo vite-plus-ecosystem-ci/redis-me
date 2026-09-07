@@ -1,0 +1,19 @@
+name: Ecosystem smoke test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1.19.0
+        with:
+          node-version: '24'
+          run-install: true
+      - run: vp check
+      - run: vp run build
