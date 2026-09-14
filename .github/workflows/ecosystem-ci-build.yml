@@ -1,0 +1,20 @@
+# This fork needs PR checks for release smoke tests. Remove this workflow when upstream adds equivalent PR coverage.
+name: ecosystem-ci build
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: false
+          run-install: true
+      - name: Build with the preview toolchain
+        run: vp build
+      - name: Check the preview toolchain
+        run: vp check
