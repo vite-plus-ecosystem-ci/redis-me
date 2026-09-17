@@ -9,6 +9,12 @@ const host = process.env.TAURI_DEV_HOST
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  test: {
+    // Vitest v4 compatibility: preserve mock call history.
+    // Remove after tests no longer rely on calls from setup or earlier tests.
+    // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
+    clearMocks: false,
+  },
   staged: { '*': 'vp check --fix' },
   lint: {
     // 仅忽略 specta 生成文件；`src/types/me-interface.ts` 等参与检查
