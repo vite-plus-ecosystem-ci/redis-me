@@ -1,0 +1,19 @@
+# This fork smoke test supplies PR checks. Remove it when upstream supplies them.
+name: ecosystem-ci build
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: false
+          run-install: true
+      - run: vp check
+      - run: vp build
