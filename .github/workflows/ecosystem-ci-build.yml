@@ -1,0 +1,24 @@
+# Ecosystem-ci smoke test: remove this workflow when the upstream project runs
+# equivalent Vite+ checks on pull requests.
+name: ecosystem-ci build
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          node-version: '24'
+          cache: false
+          run-install: true
+      - name: Check
+        run: vp check
+      - name: Build
+        run: vp build
