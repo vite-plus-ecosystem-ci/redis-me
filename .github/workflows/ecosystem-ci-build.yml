@@ -1,0 +1,24 @@
+# Ecosystem-ci smoke test: this fork has no pull_request workflow of its own.
+# Delete this file once the upstream project runs equivalent Vite+ checks on PRs.
+name: ecosystem-ci build
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '24'
+          cache: false
+          run-install: true
+      - name: vp check
+        run: vp check
+      - name: vp build
+        run: vp build
