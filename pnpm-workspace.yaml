@@ -16,8 +16,8 @@ overrides:
 patchedDependencies:
   java-object-serialization@0.1.2: patches/java-object-serialization@0.1.2.patch
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
-  vite-plus: 1.1.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.0.0-commit.824e84de80cbc1af30829ed024a4158d416dbad3
+  vite-plus: 0.0.0-commit.824e84de80cbc1af30829ed024a4158d416dbad3
 peerDependencyRules:
   allowAny:
     - vite
