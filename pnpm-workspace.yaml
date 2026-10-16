@@ -16,14 +16,21 @@ overrides:
 patchedDependencies:
   java-object-serialization@0.1.2: patches/java-object-serialization@0.1.2.patch
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
-  vite-plus: 1.1.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.0.0-commit.6a30b43184ad1c159091d51d728ee8c249392aa1
+  vite-plus: 0.0.0-commit.6a30b43184ad1c159091d51d728ee8c249392aa1
 peerDependencyRules:
   allowAny:
     - vite
   allowedVersions:
     vite: '*'
 minimumReleaseAgeExclude:
+  # ecosystem-ci smoke test: preview builds and freshly pinned toolchain packages
+  - '@oxc-project/*'
+  - tinybench
+  - yuku-core
+  - yuku-parser
+  - '@yuku-core/*'
+  - '@yuku-toolchain/*'
   - vite-plus
   - '@voidzero-dev/*'
   - oxlint
